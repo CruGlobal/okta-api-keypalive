@@ -16,9 +16,8 @@ provider:
     env: ${self:custom.environmentMap.${env:ENVIRONMENT}}
     managed_by: serverless-framework
     function: lambda
-  iamRoleStatements:
-    iamManagedPolicies:
-      - ${env:SSM_POLICY_ARN}
+  iamManagedPolicies:
+    - ${env:SSM_POLICY_ARN}
   environment: ${file(serverless/environment.js)}
 
 package:
