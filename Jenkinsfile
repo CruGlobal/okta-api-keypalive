@@ -3,5 +3,6 @@
 
 serverlessPipeline(
   defaultEnvironment: 'production',
-  packageManager: 'yarn'
+  packageManager: 'yarn',
+  ecsConfigBranch: 'rewrite-jenkins-build-and-deployment',
 )
