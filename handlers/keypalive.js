@@ -8,11 +8,10 @@ export const handler = async (lambdaEvent) => {
     const apiKeyPaths = process.env.API_KEY_PATHS.split(',')
     if (apiKeyPaths.length > 0) {
       const response = await ssm.getParameters({ Names: apiKeyPaths, WithDecryption: true }).promise()
-      const results = await Promise.allSettled(response.Parameters.map(parameter => {
+      await Promise.allSettled(response.Parameters.map(parameter => {
         const client = new Client({ orgUrl: process.env.OKTA_ORG_URL, token: parameter.Value })
         return client.listUsers({ q: 'John', limit: 1 }).each(user => {})
       }))
-      console.log(JSON.stringify(results))
     }
   } catch (error) {
     await rollbar.error(error.message, error)
