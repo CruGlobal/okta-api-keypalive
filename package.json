@@ -1,0 +1,43 @@
+{
+  "name": "okta-api-keypalive",
+  "version": "1.0.0",
+  "description": "Function to periodically call Okta api with various keys to prevent expiration.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bgarlow/okta-api-keypalive.git"
+  },
+  "author": "Brian Zoetewey <brian.zoetewey@cru.org>",
+  "license": "BSD-3-Clause",
+  "private": true,
+  "engines": {
+    "node": "> 12.9.0"
+  },
+  "scripts": {
+    "lint": "standard --verbose"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.6.4",
+    "@babel/preset-env": "^7.6.3",
+    "babel-plugin-source-map-support": "^2.1.1",
+    "coveralls": "^3.0.7",
+    "dotenv": "^8.0.0",
+    "rollbar-sourcemap-webpack-plugin": "^2.5.1",
+    "serverless": "^1.44.1",
+    "serverless-webpack": "^5.3.1",
+    "standard": "^12.0.1",
+    "webpack": "^4.2.0",
+    "webpack-node-externals": "^1.6.0"
+  },
+  "dependencies": {
+    "@okta/okta-sdk-nodejs": "^2.0.1",
+    "aws-sdk": "^2.470.0",
+    "lodash": "^4.17.14",
+    "rollbar": "^2.8.1",
+    "source-map-support": "^0.5.13"
+  },
+  "standard": {
+    "env": {
+      "node": true
+    }
+  }
+}

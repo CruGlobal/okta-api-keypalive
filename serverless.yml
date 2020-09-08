@@ -1,0 +1,58 @@
+service: okta-api-keypalive
+
+provider:
+  name: aws
+  stage: ${env:ENVIRONMENT}
+  runtime: nodejs12.x
+  region: us-east-1
+  vpc:
+    securityGroupIds:
+      - ${file(${env:ECS_CONFIG}/bin/vars.yml):us-east-1.webapp_elb_sg}
+    subnetIds: ${file(${env:ECS_CONFIG}/bin/vars.yml):us-east-1.prod_apps_1_all}
+  stackTags:
+    Name: ${env:PROJECT_NAME}-${self:custom.environmentMap.${env:ENVIRONMENT}}
+    owner: devops-engineering-team@cru.org
+    application: ${env:PROJECT_NAME}
+    env: ${self:custom.environmentMap.${env:ENVIRONMENT}}
+    managed_by: serverless-framework
+    function: lambda
+  iamRoleStatements:
+    iamManagedPolicies:
+      - ${env:SSM_POLICY_ARN}
+  environment: ${file(serverless/environment.js)}
+
+package:
+  individually: true
+  exclude:
+    - .serverless/**
+    - .webpack/**
+    - .git/**
+    - test/**
+    - '**/*.test.js'
+    - '**/*.sql'
+    - .deployment/**
+
+plugins:
+  - serverless-webpack
+
+custom:
+  webpack:
+    webpackConfig: ./webpack.config.js
+    includeModules: true
+    packager: yarn
+    excludeFiles: '**/*.test.js'
+  environmentMap:
+    production: prod
+    staging: stage
+    development: dev
+    lab: lab
+
+functions:
+  keypalive:
+    handler: handlers/keypalive.handler
+    memorySize: 128
+    timeout: 30
+    description: Function to periodically call Okta api with various keys to prevent expiration.
+    events:
+      # Run daily at 12:00a
+      - schedule: cron(0 0 * * ? *)
