@@ -3,8 +3,8 @@ name: Deploy Serverless Functions
 on:
   push:
     branches:
-      # Automatically deploy master and staging. Additional branches may be added.
-      - master
+      # Automatically deploy main and staging. Additional branches may be added.
+      - main
       - staging
   workflow_dispatch:
     # Allows manual build and deploy of any branch/ref
