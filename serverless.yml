@@ -1,10 +1,8 @@
 service: okta-api-keypalive
 frameworkVersion: '3'
 configValidationMode: error
-useDotenv: true
 plugins:
   - serverless-webpack
-  - serverless-dotenv-plugin
 
 provider:
   name: aws
@@ -30,6 +28,7 @@ provider:
         - ${env:SSM_POLICY_ARN}
   layers:
     - arn:aws:lambda:us-east-1:072686360478:layer:node-16_14_2:1
+  environment: ${file(env.js)}
 
 package:
   individually: true
@@ -44,6 +43,7 @@ custom:
     webpackConfig: ./webpack.config.js
     includeModules: true
     packager: yarn
+    excludeFiles: '**/*.test.js'
     excludeRegex: \.ts|test|\.map
   environmentMap:
     production: prod
