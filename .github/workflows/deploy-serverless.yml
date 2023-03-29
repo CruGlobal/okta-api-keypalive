@@ -6,6 +6,7 @@ on:
       # Automatically deploy main and staging. Additional branches may be added.
       - main
       - staging
+      - lab
   workflow_dispatch:
     # Allows manual build and deploy of any branch/ref
 
