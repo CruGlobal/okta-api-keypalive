@@ -3,6 +3,7 @@ import rollbar from '../config/rollbar'
 import { SSM } from 'aws-sdk'
 
 export const handler = async (lambdaEvent) => {
+  console.log(`Environment: ${JSON.stringify(Object.keys(process.env), null, 2)}`)
   try {
     const ssm = new SSM({ region: 'us-east-1' })
     const apiKeyPaths = process.env.API_KEY_PATHS.split(',')
