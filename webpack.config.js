@@ -13,7 +13,8 @@ module.exports = {
   mode: 'production',
   target: 'node',
   entry: {
-    keypalive: './handlers/keypalive.js'
+    keypalive: './handlers/keypalive.js',
+    testing: './handlers/testing.js'
   },
   output: {
     path: path.resolve(__dirname, 'dist'),
