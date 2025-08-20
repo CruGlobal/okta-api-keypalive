@@ -17,7 +17,6 @@
     "build": "webpack"
   },
   "devDependencies": {
-    "dotenv": "^17.2.1",
     "rollbar-sourcemap-webpack-plugin": "^3.3.0",
     "standard": "^17.1.2",
     "terser-webpack-plugin": "^5.3.14",
@@ -25,9 +24,8 @@
     "webpack-cli": "^6.0.1"
   },
   "dependencies": {
+    "@aws-sdk/client-ssm": "^3.864.0",
     "@okta/okta-sdk-nodejs": "^7.2.1",
-    "aws-sdk": "^2.1692.0",
-    "lodash": "^4.17.21",
     "rollbar": "^2.26.4",
     "source-map-support": "^0.5.21"
   },
