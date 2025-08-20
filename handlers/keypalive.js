@@ -1,16 +1,17 @@
-import { Client } from '@okta/okta-sdk-nodejs'
+import {SSMClient, GetParametersCommand} from "@aws-sdk/client-ssm"
+import { Client as Okta } from '@okta/okta-sdk-nodejs'
 import rollbar from '../config/rollbar'
-import { SSM } from 'aws-sdk'
 
 export const handler = async (lambdaEvent) => {
   try {
-    const ssm = new SSM({ region: 'us-east-1' })
     const apiKeyPaths = process.env.API_KEY_PATHS.split(',')
     if (apiKeyPaths.length > 0) {
-      const response = await ssm.getParameters({ Names: apiKeyPaths, WithDecryption: true }).promise()
-      await Promise.allSettled(response.Parameters.map(parameter => {
-        const client = new Client({ orgUrl: process.env.OKTA_ORG_URL, token: parameter.Value })
-        return client.listUsers({ q: 'John', limit: 1 }).each(user => {})
+      const ssm = new SSMClient({region: 'us-east-1'})
+      const command = new GetParametersCommand({Names: apiKeyPaths, WithDecryption: true})
+      const results = await ssm.send(command)
+      await Promise.allSettled(results.Parameters.map(parameter => {
+        const okta = new Okta({ orgUrl: process.env.OKTA_ORG_URL, token: parameter.Value })
+        return okta.userApi.listUsers({ q: 'John', limit: 1 })
       }))
     }
   } catch (error) {
