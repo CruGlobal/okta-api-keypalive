@@ -1,6 +1,5 @@
 import { SSMClient, GetParametersCommand } from '@aws-sdk/client-ssm'
 import { Client as Okta } from '@okta/okta-sdk-nodejs'
-import { OktaApiError } from '@okta/okta-sdk-nodejs/src/types/api-error'
 import rollbar from '../config/rollbar'
 
 const ssmClient = new SSMClient({ region: 'us-east-1' })
@@ -29,9 +28,7 @@ export const handler = async (event, context) => {
           const okta = new Okta({ orgUrl: process.env.OKTA_ORG_URL, token: parameter.Value })
           await okta.userApi.listUsers({ q: 'John', limit: 1 })
         } catch (error) {
-          if (error instanceof OktaApiError) {
-            console.error(`${parameter.Name}: ${error.message}`)
-          }
+          console.error(`${parameter.Name}: ${error.message}`)
         }
       }
     }
