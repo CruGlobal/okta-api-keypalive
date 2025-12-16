@@ -33,6 +33,7 @@ export const handler = async (event, context) => {
           })
         } catch (error) {
           console.error(`${parameter.Name}: ${error.message}`)
+          console.error(error.stackTrace)
         }
       }
     }
