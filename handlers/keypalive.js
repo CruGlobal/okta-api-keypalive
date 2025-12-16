@@ -1,5 +1,5 @@
 import { SSMClient, GetParametersCommand } from '@aws-sdk/client-ssm'
-import { Client as Okta } from '@okta/okta-sdk-nodejs'
+import { Client } from '@okta/okta-sdk-nodejs'
 import rollbar from '../config/rollbar'
 
 const ssmClient = new SSMClient({ region: 'us-east-1' })
@@ -26,14 +26,16 @@ export const handler = async (event, context) => {
       for (const parameter of results.Parameters) {
         try {
           console.log(`Keypalive: ${parameter.Name}`)
-          const okta = new Okta({ orgUrl: `${process.env.OKTA_ORG_URL}/`, token: parameter.Value })
-          const collection = await okta.userApi.listUsers({ search: 'profile.firstName sw "John"', limit: 1 })
+          const client = new Client({ orgUrl: `${process.env.OKTA_ORG_URL}/`, token: parameter.Value })
+          console.log('Okta client created', client)
+          const collection = await client.userApi.listUsers({ search: 'profile.firstName sw "John"', limit: 1 })
+          console.log('Okta collection returned', collection)
           await collection.each(user => {
             console.log("Keypalive user: ", user)
           })
         } catch (error) {
           console.error(`${parameter.Name}: ${error.message}`)
-          console.error(error.stackTrace)
+          console.error(error.stack)
         }
       }
     }
