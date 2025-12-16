@@ -29,6 +29,7 @@ ARG BUILD_NUMBER
 ENV PROJECT_NAME=${PROJECT_NAME}
 ENV ENVIRONMENT=${ENVIRONMENT}
 ENV BUILD_NUMBER=${BUILD_NUMBER}
+ENV NODE_OPTIONS=--enable-source-maps
 
 # Set the Lambda task root directory
 WORKDIR ${LAMBDA_TASK_ROOT}
@@ -42,6 +43,5 @@ RUN npm install datadog-lambda-js dd-trace
 COPY --from=public.ecr.aws/datadog/lambda-extension:latest /opt/. /opt/
 CMD ["node_modules/datadog-lambda-js/dist/handler.handler"]
 
-ENV NODE_OPTIONS=--enable-source-maps
 # Copy the built application from the builder stage
 COPY --from=builder /app/dist/* ./
