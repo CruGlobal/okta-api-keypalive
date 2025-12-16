@@ -27,9 +27,9 @@ export const handler = async (event, context) => {
         try {
           console.log(`Keypalive: ${parameter.Name}`)
           const okta = new Okta({ orgUrl: `${process.env.OKTA_ORG_URL}/`, token: parameter.Value })
-          const result = await okta.userApi.listUsers({ q: 'John', limit: 1 })
-          await result.each(user => {
-            console.log(`Keypalive user: ${JSON.stringify(user)}`)
+          const collection = await okta.userApi.listUsers({ search: 'profile.firstName sw "John"', limit: 1 })
+          await collection.each(user => {
+            console.log("Keypalive user: ", user)
           })
         } catch (error) {
           console.error(`${parameter.Name}: ${error.message}`)
