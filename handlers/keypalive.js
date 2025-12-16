@@ -26,10 +26,15 @@ export const handler = async (event, context) => {
       for (const parameter of results.Parameters) {
         try {
           console.log(`Keypalive: ${parameter.Name}`)
-          const client = new Client({ orgUrl: `${process.env.OKTA_ORG_URL}/`, token: parameter.Value })
-          console.log('Okta client created', client)
-          const collection = await client.userApi.listUsers({ search: 'profile.firstName sw "John"', limit: 1 })
-          console.log('Okta collection returned', collection)
+          const client = new Client({
+            orgUrl: process.env.OKTA_ORG_URL,
+            token: parameter.Value,
+            cacheMiddleware: null,
+          })
+          const collection = await client.userApi.listUsers({
+            search: 'profile.firstName sw "John"',
+            limit: 1
+          })
           await collection.each(user => {
             console.log("Keypalive user: ", user)
           })
