@@ -25,9 +25,10 @@ export const handler = async (event, context) => {
       const results = await ssmClient.send(command)
       for (const parameter of results.Parameters) {
         try {
-          console.log(`Keypalive: ${parameter.name}`)
-          const okta = new Okta({ orgUrl: process.env.OKTA_ORG_URL, token: parameter.Value })
-          await okta.userApi.listUsers({ q: 'John', limit: 1 })
+          console.log(`Keypalive: ${parameter.Name}`)
+          const okta = new Okta({ orgUrl: `${process.env.OKTA_ORG_URL}/`, token: parameter.Value })
+          const result = await okta.userApi.listUsers({ q: 'John', limit: 1 })
+          console.log(`Keypalive user list: ${JSON.stringify(result)}`)
         } catch (error) {
           console.error(`${parameter.Name}: ${error.message}`)
         }
