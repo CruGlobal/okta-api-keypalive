@@ -35,9 +35,7 @@ export const handler = async (event, context) => {
             search: 'profile.firstName sw "John"',
             limit: 1
           })
-          await collection.each(user => {
-            console.log("Keypalive user: ", user)
-          })
+          await collection.each(user => false)
         } catch (error) {
           console.error(`${parameter.Name}: ${error.message}`)
           console.error(error.stack)

@@ -35,17 +35,17 @@ module.exports = {
   },
   devtool: 'source-map',
   optimization: {
-    minimize: false,
-    // minimizer: [
-    //   new TerserPlugin({
-    //     extractComments: false,
-    //     terserOptions: {
-    //       format: {
-    //         comments: false
-    //       }
-    //     }
-    //   })
-    // ]
+    minimize: true,
+    minimizer: [
+      new TerserPlugin({
+        extractComments: false,
+        terserOptions: {
+          format: {
+            comments: false
+          }
+        }
+      })
+    ]
   },
   plugins: [
     new webpack.EnvironmentPlugin({
