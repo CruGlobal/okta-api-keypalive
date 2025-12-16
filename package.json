@@ -26,6 +26,7 @@
   "dependencies": {
     "@aws-sdk/client-ssm": "^3.952.0",
     "@okta/okta-sdk-nodejs": "^7.3.0",
+    "encoding": "^0.1.13",
     "rollbar": "^2.26.5",
     "source-map-support": "^0.5.21"
   },

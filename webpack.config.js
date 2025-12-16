@@ -15,6 +15,9 @@ module.exports = {
   entry: {
     keypalive: './handlers/keypalive.js'
   },
+  resolve: {
+    mainFields: ['main', 'module']
+  },
   output: {
     path: path.resolve(__dirname, 'dist'),
     chunkFormat: false,
