@@ -10,18 +10,15 @@
   "license": "BSD-3-Clause",
   "private": true,
   "engines": {
-    "node": "> 22.0.0"
+    "node": "> 24.0.0"
   },
   "scripts": {
     "lint": "standard --verbose",
-    "build": "webpack"
+    "build": "esbuild handlers/keypalive.js --bundle --platform=node --target=node24 --outfile=dist/keypalive.js --sourcemap --format=cjs"
   },
   "devDependencies": {
-    "rollbar-sourcemap-webpack-plugin": "^3.3.0",
-    "standard": "^17.1.2",
-    "terser-webpack-plugin": "^5.3.14",
-    "webpack": "5.99.9",
-    "webpack-cli": "^6.0.1"
+    "esbuild": "0.27.2",
+    "standard": "^17.1.2"
   },
   "dependencies": {
     "@aws-sdk/client-ssm": "^3.952.0",
