@@ -15,6 +15,12 @@ export const handler = async (event, context) => {
 
     const apiKeyPaths = process.env.API_KEY_PATHS.split(',')
     console.log(`API Key Paths: ${JSON.stringify(apiKeyPaths, null, 2)}`)
+
+    const dryRun = process.env.DRY_RUN === 'true'
+    if (dryRun) {
+      console.log(`DRY_RUN enabled: no keepalive calls will be executed. Would hit Okta org ${process.env.OKTA_ORG_URL} with ${apiKeyPaths.length} key(s): ${JSON.stringify(apiKeyPaths, null, 2)}`)
+    }
+
     const apiKeyPathChunks = apiKeyPaths.reduce((acc, _, index) => {
       acc.push(apiKeyPaths.slice(index, index + 10))
       return acc
@@ -31,6 +37,10 @@ export const handler = async (event, context) => {
             token: parameter.Value,
             cacheMiddleware: null,
           })
+          if (dryRun) {
+            console.log(`Keypalive [DRY_RUN]: skipping Okta call for ${parameter.Name}`)
+            continue
+          }
           const collection = await client.userApi.listUsers({
             search: 'profile.firstName sw "John"',
             limit: 1
