@@ -20,15 +20,7 @@ ARG NODE_VERSION=latest
 # Use AWS Lambda Node.js base image for the final image
 FROM public.ecr.aws/lambda/nodejs:${NODE_VERSION}
 
-# Define GitHub Action Build Args
-ARG PROJECT_NAME
-ARG ENVIRONMENT
-ARG BUILD_NUMBER
-
 # Set environment variables for the Lambda function
-ENV PROJECT_NAME=${PROJECT_NAME}
-ENV ENVIRONMENT=${ENVIRONMENT}
-ENV BUILD_NUMBER=${BUILD_NUMBER}
 ENV NODE_OPTIONS=--enable-source-maps
 
 # Set the Lambda task root directory

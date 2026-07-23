@@ -1,13 +1,13 @@
 name: Build & Deploy Lambda
 
 on:
-  push:
-    branches:
-      # Automatically deploy main. Additional branches may be added.
-      - main
-      - staging
-      # lab branch require `lab-` prefix
-      - lab-dev1
+  # v1 pipeline parked during the pipeline-v2 pilot — pipeline-v2.yml now builds
+  # and deploys via the v2 build-once/promote flow. Escape hatch: run this
+  # workflow manually from the Actions tab (workflow_dispatch), optionally with
+  # auto-deploy=true; restore the push triggers below to fully revert to v1.
+  #
+  # The old push branch mappings (main/staging/lab-dev1) are retired: stage is
+  # now the v2 release-candidate surface, and the lab env was collapsed into prod.
   workflow_dispatch:
     # Allows manual build and deploy of any branch/ref
     inputs:
