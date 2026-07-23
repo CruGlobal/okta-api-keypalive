@@ -21,8 +21,9 @@ export const handler = async (event, context) => {
       console.log(`DRY_RUN enabled: no keepalive calls will be executed. Would hit Okta org ${process.env.OKTA_ORG_URL} with ${apiKeyPaths.length} key(s): ${JSON.stringify(apiKeyPaths, null, 2)}`)
     }
 
+    // Chunk into groups of 10 (GetParameters accepts at most 10 names per call).
     const apiKeyPathChunks = apiKeyPaths.reduce((acc, _, index) => {
-      acc.push(apiKeyPaths.slice(index, index + 10))
+      if (index % 10 === 0) acc.push(apiKeyPaths.slice(index, index + 10))
       return acc
     }, [])
 
