@@ -45,3 +45,8 @@ CMD ["node_modules/datadog-lambda-js/dist/handler.handler"]
 
 # Copy the built application from the builder stage
 COPY --from=builder /app/dist/* ./
+
+# Build identity -> Datadog version (D10 bare suffix, e.g. 2026-07-24-10058).
+# Passed by build-candidate as --build-arg VERSION; "dev" for local builds.
+ARG VERSION="dev"
+ENV DD_VERSION=${VERSION}
