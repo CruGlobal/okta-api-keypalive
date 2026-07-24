@@ -1,5 +1,13 @@
 # Pilot workflow for the v2 build-once / promote pipeline (Lambda).
 #
+# Cadence: nightly-if-changed, the default cadence for v2 apps (D11). The
+# scheduled run builds the tip of main once a day; the build's no-change guard
+# reuses the existing candidate when main hasn't moved, and deploy-candidate
+# no-ops when release-candidate already runs that digest — so a quiet night is a
+# true end-to-end no-op. workflow_dispatch builds on demand with the same guard
+# semantics: an already-built sha is reused rather than rebuilt, and a force
+# redeploy is available on cru-deploy's Deploy Candidate (v2) dispatch.
+#
 # Pinned to the `pipeline-v2` branch of CruGlobal/.github (both the reusable
 # workflow and the actions) and passes workflow-ref: pipeline-v2 so the actions
 # the reusable workflow checks out match. Re-pin every `@pipeline-v2` reference
@@ -7,9 +15,9 @@
 name: Pipeline v2
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
+  schedule:
+    - cron: '10 12 * * *'
 
 jobs:
   build:
@@ -24,6 +32,10 @@ jobs:
     with:
       workflow-ref: pipeline-v2
       type: lambda
+    # BUILD-time secrets are repo secrets named BUILD_<NAME> (D2): inherit hands
+    # them to the reusable workflow, which exports ONLY the BUILD_* keys into
+    # the build environment (prefix stripped).
+    secrets: inherit
 
   deploy-release-candidate:
     name: Deploy to release-candidate
