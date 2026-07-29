@@ -26,10 +26,14 @@ that wiring in place when you edit the `Dockerfile`.
 ├── Dockerfile          # builder → secrets-lambda-extension → lambda/nodejs runtime
 ├── build.sh            # what CI runs to build the image (docker buildx)
 ├── .tool-versions      # pinned Node version (asdf / mise)
+├── .github/workflows/ci.yml                   # PR gate: lint + test + build
+├── .github/workflows/conventional-commits.yml # PR gate: PR-title check
+├── .github/workflows/dependabot-auto-merge.yml
 ├── .github/workflows/pipeline-v2.yml          # nightly build + release-candidate deploy
 ├── .github/workflows/build-deploy-lambda.yml  # parked v1 workflow
-├── handlers/keypalive.js  # the handler (the whole app)
-└── config/rollbar.js      # Rollbar client (enabled by ENVIRONMENT)
+├── handlers/keypalive.js       # the handler (the whole app)
+├── handlers/keypalive.test.js  # the unit suite (vitest)
+└── config/rollbar.js           # Rollbar client (enabled by ENVIRONMENT)
 ```
 
 Plain **JavaScript** (ESM source, bundled to CJS), Node version pinned in
@@ -41,14 +45,71 @@ Plain **JavaScript** (ESM source, bundled to CJS), Node version pinned in
 | Command | What it does |
 | --- | --- |
 | `npm ci` | install dependencies |
-| `npm run lint` | `standard --verbose` — the only automated check that exists |
+| `npm run lint` | `standard --verbose` |
+| `npm test` | `vitest run` — the unit suite (`handlers/keypalive.test.js`) |
 | `npm run build` | esbuild bundle → `dist/keypalive.js` (what the Dockerfile runs) |
 | `./build.sh` | build the Lambda container image the way CI does |
 
-**There is no test suite and no CI workflow in this repo**, and the
-default-branch ruleset requires a pull request and linear history but **no**
-status checks — so `npm run lint` and `npm run build` before opening a PR are on
-you. If you add meaningful logic, add tests and a CI workflow with it.
+`npm ci && npm run lint && npm test && npm run build` is exactly what CI runs, in
+that order. Run it before you open a PR — see [Merge gating](#merge-gating).
+
+## Tests
+
+`handlers/keypalive.test.js` (vitest) is the whole suite; it mocks
+`@aws-sdk/client-ssm`, `@okta/okta-sdk-nodejs`, and `config/rollbar`, so it needs
+no credentials and makes no network calls. Use `npm run test:watch` while
+iterating.
+
+What it pins, and why you should not weaken it:
+
+- **`DRY_RUN=true` performs no Okta call at all.** This is the safety property the
+  **release-candidate** surface depends on — that environment runs the identical
+  image against real SSM parameters with `DRY_RUN=true`, and it is this app's
+  entire pre-production test strategy. If you add a side effect, put it behind the
+  same guard and extend these tests, or stage stops being a safe rehearsal.
+- **`DRY_RUN` is compared with `=== 'true'`.** `True`, `TRUE`, `1`, and `yes` all
+  mean *not* a dry run. That is deliberately pinned: `DRY_RUN` is a
+  Terraform-owned per-environment variable, and a capitalised typo there would
+  silently turn stage into a live run.
+- **Parameter paths are chunked 10-at-a-time with no overlap and no omission** (the
+  `GetParameters` limit). A regression here re-introduces a fixed bug.
+- **Per-token failures stay non-fatal** (one bad token must not stop the rest, and
+  must not page anyone), while an **SSM failure fails the whole invocation** and is
+  reported to Rollbar.
+
+## Merge gating
+
+Three PR-triggered workflows, all of which must be green before a PR can merge:
+
+| Workflow | Check name | What it does |
+| --- | --- | --- |
+| `.github/workflows/ci.yml` | `lint-and-build` | `npm ci` → lint → test → build |
+| `.github/workflows/conventional-commits.yml` | `Validate PR Title` | PR title is a valid Conventional Commit |
+| `.github/workflows/dependabot-auto-merge.yml` | — | approves + auto-merges eligible Dependabot PRs |
+
+The default-branch ruleset (`pipeline-v2-default-branch`) requires a pull
+request, linear history, and **those two status checks**. It is owned by
+Terraform — `applications/okta-api-keypalive/github.tf` in
+[`cru-terraform`](https://github.com/CruGlobal/cru-terraform), input
+`required_checks` — **not** by anything in this repo.
+
+> **The check names are a contract across two repos.** `lint-and-build` is the
+> job id *and* `name:` in `ci.yml`; `Validate PR Title` is the job `name:` in
+> `conventional-commits.yml`. Rename either one here without changing
+> `required_checks` there and the ruleset waits forever on a check that no longer
+> reports — the branch is wedged, not merely un-gated. Change both, or neither.
+>
+> Ordering matters for the same reason: a required check must **exist** before it
+> is required. Land the workflow here first, the `required_checks` change second.
+
+**Dependabot PRs auto-merge without a human.** `dependabot-auto-merge.yml`
+approves and enables squash auto-merge for security advisories and for
+patch/minor bumps (majors are left for review; for a grouped PR, `update-type` is
+the highest bump in the group, so any group containing a major is excluded). The
+required checks above are the only thing standing between a bad dependency bump
+and `main` — which is why the suite needs to stay meaningful. Deploys are still
+nightly, so an auto-merged bump reaches release-candidate on the next build and
+gets its dry-run rehearsal before anyone promotes it.
 
 To exercise the built image locally, run it under the AWS Lambda Runtime
 Interface Emulator. If you build an image you intend to actually deploy, note
@@ -90,9 +151,9 @@ referenced anywhere, the reference is stale.
 1. **Work on a branch** off `main` and open a **Pull Request** back to `main`.
    The repo is **squash-only with auto-merge enabled**, and the PR title becomes
    the squash commit subject — so write it as a **Conventional Commit**
-   (`feat: …`, `fix: …`). (Fleet convention; unlike some Cru repos, this one has
-   no "Validate PR Title" check wired up yet, so nothing enforces it
-   mechanically.)
+   (`feat: …`, `fix: …`). This is **enforced**: the "Validate PR Title" check is
+   required, so a non-conforming title blocks the merge. See
+   [Merge gating](#merge-gating).
 2. **Builds do not run on push.** `.github/workflows/pipeline-v2.yml` runs on a
    **nightly cron at 05:00 UTC** (`cron: '0 5 * * *'` — midnight EST / 1am EDT,
    one unstaggered slot shared by the whole v2 fleet) and on manual
