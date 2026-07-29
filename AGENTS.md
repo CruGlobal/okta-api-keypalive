@@ -188,8 +188,6 @@ Watch a run with `gh run watch`, or the Actions tab here (build) and in
 
 ## Leftovers you can ignore
 
-- `.github/merge-bot.yml` — v1 merge-bot config. The v2 flow has no `staging`
-  branch for it to act on.
 - Stale `staging` and `lab-dev1` branches still exist on the remote; the lab
   environment was collapsed into prod. `main` is the only live branch.
 
