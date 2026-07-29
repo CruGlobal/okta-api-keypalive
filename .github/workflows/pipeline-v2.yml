@@ -8,11 +8,14 @@
 # semantics: an already-built sha is reused rather than rebuilt, and a force
 # redeploy is available on cru-deploy's Deploy Candidate (v2) dispatch.
 #
-# The whole v2 fleet builds nightly at midnight UTC — one shared slot, no
-# staggering. GitHub's scheduled dispatch is best-effort, and top-of-hour
-# crons (00:00 UTC most of all) sit in the busiest queue: a nightly run can
-# start many minutes after the nominal time when the shared scheduler is under
-# load. That lateness is expected, not a failure.
+# The whole v2 fleet builds nightly at 05:00 UTC — midnight EST, 1am EDT. The
+# clock time drifts an hour across DST, which is the deliberate wobble of a
+# fixed-UTC cron and perfectly tolerable for a nightly. It is still one shared
+# slot for the whole fleet, with no staggering. 05:00 UTC is off-peak on
+# GitHub's scheduler, so dispatch lag is minimal — unlike 00:00 UTC, the
+# busiest cron minute on GitHub, where runs routinely started many minutes
+# late. Scheduled dispatch is still best-effort, so a few minutes of lateness
+# is expected, not a failure.
 #
 # Pinned to the `pipeline-v2` branch of CruGlobal/.github (both the reusable
 # workflow and the actions) and passes workflow-ref: pipeline-v2 so the actions
@@ -23,7 +26,7 @@ name: Pipeline v2
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 0 * * *'
+    - cron: '0 5 * * *'
 
 jobs:
   build:

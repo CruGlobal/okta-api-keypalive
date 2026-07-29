@@ -94,11 +94,12 @@ referenced anywhere, the reference is stale.
    no "Validate PR Title" check wired up yet, so nothing enforces it
    mechanically.)
 2. **Builds do not run on push.** `.github/workflows/pipeline-v2.yml` runs on a
-   **nightly cron at midnight UTC** (`cron: '0 0 * * *'` — one unstaggered slot
-   shared by the whole v2 fleet) and on manual **`workflow_dispatch`**. Merging
-   to `main` does not deploy anything by itself. GitHub's scheduled dispatch is
-   best-effort and top-of-hour crons queue: a nightly that starts several
-   minutes late is expected, not a failure.
+   **nightly cron at 05:00 UTC** (`cron: '0 5 * * *'` — midnight EST / 1am EDT,
+   one unstaggered slot shared by the whole v2 fleet) and on manual
+   **`workflow_dispatch`**. Merging to `main` does not deploy anything by
+   itself. 05:00 UTC is off-peak on GitHub's scheduler, so dispatch lag is
+   minimal — but scheduled dispatch is still best-effort, so a nightly that
+   starts a few minutes late is expected, not a failure.
 3. **A build produces a candidate.** It pushes `candidate-<yyyy-mm-dd>-<n>` and
    `sha-<gitsha>` to the app's ECR repo
    (`056154071827.dkr.ecr.us-east-1.amazonaws.com/okta-api-keypalive`), then
