@@ -1,0 +1,53 @@
+version: 2
+
+# The commit-message prefixes make Dependabot's PR titles valid Conventional
+# Commits ("deps(npm): bump rollbar ..." rather than "Bump rollbar ...").
+# okta-api-keypalive has no "Validate PR Title" check today, so nothing enforces
+# them yet — they are here so the titles are already correct when the
+# conventional-commits workflow and the required check land, and so the squash
+# subjects that feed the deploy changelog read consistently with the rest of the
+# v2 fleet.
+updates:
+  # ──────────────────────────────────────────────────────────────────────────
+  # npm dependencies. Minor and patch bumps across both runtime and dev
+  # dependencies are batched into a single weekly PR to keep review cost flat.
+  # Major version bumps are intentionally left ungrouped so each one gets its
+  # own PR and a proper migration check — the AWS SDK and Okta SDK clients are
+  # the ones most likely to need it.
+  # ──────────────────────────────────────────────────────────────────────────
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      npm-dependencies:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # GitHub Actions used by .github/workflows/**. Same policy: one batched PR
+  # per week for minor + patch bumps; majors stay per-PR so any breaking change
+  # in an action surface surfaces distinctly.
+  # ──────────────────────────────────────────────────────────────────────────
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
