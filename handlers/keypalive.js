@@ -36,7 +36,7 @@ export const handler = async (event, context) => {
           const client = new Client({
             orgUrl: process.env.OKTA_ORG_URL,
             token: parameter.Value,
-            cacheMiddleware: null,
+            cacheMiddleware: null
           })
           if (dryRun) {
             console.log(`Keypalive [DRY_RUN]: skipping Okta call for ${parameter.Name}`)
