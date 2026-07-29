@@ -1,0 +1,54 @@
+name: CI
+
+# Pull-request gate for the app code itself. Deploys are a separate concern:
+# pipeline-v2.yml builds nightly and deploys the candidate to
+# release-candidate, and it does NOT run on push -- so this workflow is the only
+# thing that looks at a PR's code before it becomes the squash commit on `main`.
+#
+# The job id and name are both `lint-and-build` because that string is the
+# required-status-check name in the default-branch ruleset
+# (applications/okta-api-keypalive/github.tf in cru-terraform,
+# `required_checks`). Renaming the job silently un-gates the branch: the ruleset
+# keeps waiting for a check that no longer reports. Rename in both places or
+# neither.
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-build:
+    name: lint-and-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Single source of truth for the Node version: .tool-versions, the same
+      # file build.sh reads for the Docker build arg. Don't hardcode a version
+      # here -- CI and the shipped image would drift.
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .tool-versions
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      # Proves the esbuild bundle the Dockerfile produces still builds. Not a
+      # container build -- the image is built nightly by pipeline-v2.yml.
+      - name: Build
+        run: npm run build
