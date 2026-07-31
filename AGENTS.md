@@ -223,6 +223,41 @@ Watch a run with `gh run watch`, or the Actions tab here (build) and in
 > `workflow-ref: pipeline-v2` so both match. Those references get re-pinned to
 > `@v2` when the pipeline is released — change them together or not at all.
 
+## Feature flags
+
+The pipeline runs a feature-flag service and the `aws/lambda/app` module injects
+`CRU_FLAGS_URL` into release-candidate and production — but **this function has
+no flag client wired up yet**, so the variable is present and unread. Wire one
+the day there is a flag to read, and use the official client rather than anything
+hand-made:
+
+```js
+// npm install @cruglobal/flags
+import { flags } from '@cruglobal/flags'
+
+await flags.ready()                    // in the handler: warm the first poll
+if (flags.enabled('some_flag')) { … }  // sync, never throws, unknown = off
+```
+
+- **Never write your own flag system** — a new `DRY_RUN`-style environment
+  variable is not a feature flag, and neither is an SSM parameter or a
+  hand-rolled fetch of `CRU_FLAGS_URL`. Never wrap the client in retries,
+  caching or timeouts either: it polls with `ETag` revalidation, keeps
+  last-known-good through an outage, and `unref()`s its timer so it never holds
+  an invocation open.
+- **App code never writes a flag.** `cru application flags create <name> -n
+  okta-api-keypalive --description "…"`, then `enable`/`disable` it
+  `-e <stage|production>`; the next invocation sees it within about a minute —
+  no build, no deploy.
+- **Off is the safe default.** `CRU_FLAGS_URL` is unset locally, in CI and under
+  `vitest`, which makes the client inert (every flag `false`), and unknown flags
+  are `false` too — so flag-gated code must behave with the flag off. That is
+  what makes merging dark safe.
+
+Full detail: the [pipeline guide's Feature flags
+section](https://github.com/CruGlobal/cru-deploy/blob/main/docs/pipeline-v2.md#feature-flags);
+flags per environment are on <https://deploys.cru.org>.
+
 ## Infrastructure & secrets
 
 - **Provisioning** (the Lambda function(s), IAM role, the schedule, the SSM
