@@ -5,14 +5,23 @@ that keeps Okta API tokens from expiring. It is invoked on a schedule (there is
 no HTTP surface and no port): for each SSM Parameter Store path listed in
 `API_KEY_PATHS`, it fetches the token, makes one trivial Okta call
 (`listUsers`, limit 1) with it, and moves on. Per-token errors are logged and
-skipped; a failure of the whole run is reported to Rollbar and rethrown so the
-invocation fails visibly.
+skipped so one bad token cannot stop the rest, and the run reports a single
+aggregate item for them; a failure of the whole run is reported and rethrown so
+the invocation fails visibly.
 
 The function is packaged as a **container image** (not a zip): the final stage is
 `public.ecr.aws/lambda/nodejs`, wrapped by Cru's
 **secrets-lambda-extension** (`AWS_LAMBDA_EXEC_WRAPPER`, which injects secrets as
 environment variables at runtime) and the **DataDog lambda-extension**. Leave
 that wiring in place when you edit the `Dockerfile`.
+
+The bundle ships with its source map (`npm run build` passes `--sourcemap`, and
+the `Dockerfile` copies all of `dist/`) and the image sets
+`NODE_OPTIONS=--enable-source-maps`, so Node resolves stacks in-process and a
+reported frame names `handlers/keypalive.js` and a real line number instead of a
+bundle offset. Nothing is uploaded anywhere for that to work — keep the flag, the
+`--sourcemap`, and the whole-`dist/` copy together, or reported stacks go back to
+being unreadable.
 
 > The pipeline-v2 design doc spells the project `okta-api-keepalive` in one
 > place. The real project and ECR repo name is **`okta-api-keypalive`** — the
@@ -33,7 +42,7 @@ that wiring in place when you edit the `Dockerfile`.
 ├── .github/workflows/build-deploy-lambda.yml  # parked v1 workflow
 ├── handlers/keypalive.js       # the handler (the whole app)
 ├── handlers/keypalive.test.js  # the unit suite (vitest)
-└── config/rollbar.js           # Rollbar client (enabled by ENVIRONMENT)
+└── config/rollbar.js           # error reporting (needs ENVIRONMENT + both ROLLBAR_* vars)
 ```
 
 Plain **JavaScript** (ESM source, bundled to CJS), Node version pinned in
@@ -73,9 +82,17 @@ What it pins, and why you should not weaken it:
   silently turn stage into a live run.
 - **Parameter paths are chunked 10-at-a-time with no overlap and no omission** (the
   `GetParameters` limit). A regression here re-introduces a fixed bug.
-- **Per-token failures stay non-fatal** (one bad token must not stop the rest, and
-  must not page anyone), while an **SSM failure fails the whole invocation** and is
-  reported to Rollbar.
+- **Per-token failures stay non-fatal**: one bad token must not stop the rest, and
+  the invocation still succeeds — while an **SSM failure fails the whole
+  invocation** and is reported.
+- **A run that fails keys reports one aggregate item, not one per key**, tiered by
+  outcome: every attempted key failing is an `error` (nothing was kept alive),
+  some-but-not-all is a `warning`, and a run that attempted nothing — a dry run,
+  or SSM returning no parameters — reports nothing at all. The counts stay **out
+  of the reported message** and ride in the custom data, and the item carries an
+  explicit fingerprint: a frameless item is grouped by its message, so a count in
+  the text would open a fresh error group, and fire a fresh alert, on every run
+  with a different tally.
 
 ## Merge gating
 
@@ -129,7 +146,20 @@ variables owned by Terraform:
 | `OKTA_ORG_URL` | the Okta org to call (required) |
 | `DRY_RUN` | `"true"` ⇒ log what would happen and make **no** Okta calls |
 | `ENVIRONMENT` | enables Rollbar (`staging` / `production` / `lab`) and tags its payloads |
-| `ROLLBAR_ACCESS_TOKEN` | Rollbar token |
+| `ROLLBAR_ACCESS_TOKEN` | ingestion token for the error tracker — **required for any reporting** |
+| `ROLLBAR_ENDPOINT` | the Rollbar-compatible ingest URL, e.g. `https://flightdeck.cru.org/api/1/item/` — **required for any reporting** |
+
+**Error reporting fails closed.** On top of the `ENVIRONMENT` gate,
+`config/rollbar.js` builds no notifier at all unless **both**
+`ROLLBAR_ACCESS_TOKEN` and `ROLLBAR_ENDPOINT` are set; `rollbar.error(…)` and
+`rollbar.warning(…)` become no-ops that still resolve, and a run in a reporting
+environment logs `Error reporting is OFF` once at startup. There is deliberately
+**no built-in endpoint default**: the notifier's own default is the Rollbar SaaS,
+which is not where these errors belong, and a token aimed at the wrong host is
+rejected silently. Both values are owned by `cru-terraform` per environment (so
+the "don't invent infrastructure" rule genuinely applies — changing them is a
+TerraBloks / `cru-terraform` change, not an app change), and reporting stays off
+until both are supplied, whichever of the app and the infrastructure lands first.
 
 **`.env` in this repo is a tracked, empty template** (`.gitignore` deliberately
 un-ignores it with `!.env` while ignoring `.env.*`). Keep the values blank —
@@ -203,6 +233,12 @@ referenced anywhere, the reference is stale.
    `version` is the build's identity in every environment. (Function-config env
    overlays image ENV per name, and nothing sets `DD_VERSION` there, so the baked
    value shines through.) Keep those two lines last.
+
+   `config/rollbar.js` reports the same `DD_VERSION` as the error tracker's
+   `code_version`, so an error and a deploy line up on one string. It is the only
+   build identity the bundle can see: a bundled entrypoint gets no `package.json`
+   and reads no config file at runtime, so build identity has to arrive as a
+   build arg turned into an `ENV`.
 8. **A deploy updates every matching function.** It calls
    `UpdateFunctionCode` on each `okta-api-keypalive-<prod|stage>*` **image**
    function whose current image is in this app's ECR repo (or still on the
