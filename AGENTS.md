@@ -41,8 +41,9 @@ being unreadable.
 ├── .github/workflows/pipeline-v2.yml          # nightly build + release-candidate deploy
 ├── .github/workflows/build-deploy-lambda.yml  # parked v1 workflow
 ├── handlers/keypalive.js       # the handler (the whole app)
-├── handlers/keypalive.test.js  # the unit suite (vitest)
-└── config/rollbar.js           # error reporting (needs ENVIRONMENT + both ROLLBAR_* vars)
+├── handlers/keypalive.test.js  # the handler suite (vitest, everything mocked)
+├── config/rollbar.js           # error reporting (needs ENVIRONMENT + both ROLLBAR_* vars)
+└── config/rollbar.test.js      # the reporting suite (vitest, real rollbar + loopback)
 ```
 
 Plain **JavaScript** (ESM source, bundled to CJS), Node version pinned in
@@ -55,7 +56,7 @@ Plain **JavaScript** (ESM source, bundled to CJS), Node version pinned in
 | --- | --- |
 | `npm ci` | install dependencies |
 | `npm run lint` | `standard --verbose` |
-| `npm test` | `vitest run` — the unit suite (`handlers/keypalive.test.js`) |
+| `npm test` | `vitest run` — both suites (`handlers/keypalive.test.js`, `config/rollbar.test.js`) |
 | `npm run build` | esbuild bundle → `dist/keypalive.js` (what the Dockerfile runs) |
 | `./build.sh` | build the Lambda container image the way CI does |
 
@@ -64,10 +65,20 @@ that order. Run it before you open a PR — see [Merge gating](#merge-gating).
 
 ## Tests
 
-`handlers/keypalive.test.js` (vitest) is the whole suite; it mocks
-`@aws-sdk/client-ssm`, `@okta/okta-sdk-nodejs`, and `config/rollbar`, so it needs
-no credentials and makes no network calls. Use `npm run test:watch` while
-iterating.
+Two vitest suites, with deliberately different strategies. Use
+`npm run test:watch` while iterating; neither needs credentials and neither
+touches the outside world.
+
+- **`handlers/keypalive.test.js`** — the handler. It mocks
+  `@aws-sdk/client-ssm`, `@okta/okta-sdk-nodejs`, and `config/rollbar`, so no
+  test needs a token and none makes a network call.
+- **`config/rollbar.test.js`** — error reporting, against the **real `rollbar`
+  package**, pointed at a loopback receiver through `ROLLBAR_ENDPOINT`. That is
+  on purpose: the properties it pins are properties of the library's own contract
+  (where it reads `endpoint` from, where `code_version` and a per-item
+  fingerprint land in the payload it sends), and a stubbed notifier cannot notice
+  the library moving any of them. Keep it on the real package — and if you point
+  it anywhere but loopback, you have broken the reason it is safe.
 
 What it pins, and why you should not weaken it:
 
@@ -85,6 +96,14 @@ What it pins, and why you should not weaken it:
 - **Per-token failures stay non-fatal**: one bad token must not stop the rest, and
   the invocation still succeeds — while an **SSM failure fails the whole
   invocation** and is reported.
+- **Reporting fails closed**: no notifier is constructed unless **both**
+  `ROLLBAR_ACCESS_TOKEN` and `ROLLBAR_ENDPOINT` are set, no endpoint default is
+  ever substituted, and the report helpers stay no-ops that **resolve** — the
+  handler awaits them, so a rejection would turn "not configured" into a failed
+  invocation. Half-configured is the state worth fearing: a token with no
+  endpoint would post to the notifier's own default host, where the rejection is
+  silent. A dependency bump carrying a security advisory auto-merges here without
+  a human, so this is pinned by a test rather than by a comment.
 - **A run that fails keys reports one aggregate item, not one per key**, tiered by
   outcome: every attempted key failing is an `error` (nothing was kept alive),
   some-but-not-all is a `warning`, and a run that attempted nothing — a dry run,
