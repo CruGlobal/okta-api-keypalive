@@ -42,6 +42,8 @@ let originalEnv
 let server
 let endpoint
 let received
+let sockets
+let stalled
 
 beforeEach(async () => {
   originalEnv = process.env
@@ -52,15 +54,25 @@ beforeEach(async () => {
   process.env.ENVIRONMENT = 'staging'
 
   received = []
+  sockets = []
+  stalled = false
   server = http.createServer((request, response) => {
     let body = ''
     request.on('data', chunk => { body += chunk })
     request.on('end', () => {
-      received.push({ path: request.url, payload: JSON.parse(body) })
+      received.push({
+        path: request.url,
+        headers: request.headers,
+        payload: JSON.parse(body)
+      })
+      // `stalled` accepts the item and never answers, which is the shape of the
+      // failure that made the flush bound necessary.
+      if (stalled) return
       response.writeHead(200, { 'content-type': 'application/json' })
       response.end('{"err":0}')
     })
   })
+  server.on('connection', socket => sockets.push(socket))
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
   endpoint = `http://127.0.0.1:${server.address().port}${ENDPOINT_PATH}`
 
@@ -70,6 +82,9 @@ beforeEach(async () => {
 
 afterEach(async () => {
   removeNotifierHandlers()
+  // A stalled request leaves its connection open, which would hold `close()`
+  // open with it -- and dropping it lets the notifier finish draining too.
+  for (const socket of sockets) socket.destroy()
   await new Promise(resolve => server.close(resolve))
   process.env = originalEnv
   vi.restoreAllMocks()
@@ -137,7 +152,9 @@ describe('with both variables set', () => {
     expect(notifierConstructed()).toBe(true)
     expect(received).toHaveLength(1)
     expect(received[0].path).toBe(ENDPOINT_PATH)
-    expect(received[0].payload.access_token).toBe('server-token')
+    // The token travels in the header. It used to be embedded in the request
+    // body as well; what matters is that the ingest is told who is reporting.
+    expect(received[0].headers['x-rollbar-access-token']).toBe('server-token')
   })
 
   // The server contract: `code_version` at the top level of the payload. The
@@ -171,6 +188,38 @@ describe('with both variables set', () => {
     expect(data.fingerprint).toBe('okta-api-keypalive:probe')
     expect(data.level).toBe('warning')
     expect(data.custom.keypalive).toMatchObject({ attempted: 2, failed: 1 })
+  })
+
+  // The failure this bound exists for: the ingest accepted the POST and never
+  // answered, the notifier waited forever, and the invocation ran to its Lambda
+  // timeout with nothing reported. The notifier has no timeout of its own --
+  // neither a per-item callback nor `wait()` is guaranteed to fire -- so the
+  // flush has to give up by itself. A lost report beats a lost run.
+  it('gives up on a transport that never answers instead of holding the run open', async () => {
+    process.env.ROLLBAR_ENDPOINT = endpoint
+    stalled = true
+
+    const reporter = await loadReporter()
+
+    vi.useFakeTimers()
+    try {
+      const flushing = reporter.error('probe failure', new Error('probe failure'))
+      let settled = false
+      flushing.then(() => { settled = true })
+
+      // It really waits for the flush rather than resolving straight away...
+      await vi.advanceTimersByTimeAsync(4000)
+      expect(settled).toBe(false)
+
+      // ...and it gives up rather than waiting forever.
+      await vi.advanceTimersByTimeAsync(1500)
+      await expect(flushing).resolves.toBeUndefined()
+    } finally {
+      vi.useRealTimers()
+    }
+
+    const warned = console.warn.mock.calls.map(([line]) => line)
+    expect(warned.some(line => line.includes('did not confirm'))).toBe(true)
   })
 
   // The ENVIRONMENT gate is unchanged and independent: both variables present
