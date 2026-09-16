@@ -10,7 +10,8 @@ const mocks = vi.hoisted(() => ({
   ssmSend: vi.fn(),
   listUsers: vi.fn(),
   each: vi.fn(),
-  rollbarError: vi.fn()
+  rollbarError: vi.fn(),
+  rollbarWarning: vi.fn()
 }))
 
 vi.mock('@aws-sdk/client-ssm', () => ({
@@ -44,7 +45,7 @@ vi.mock('@okta/okta-sdk-nodejs', () => ({
 // The real module builds a Rollbar client at import time; stub it so no test
 // needs a token and so we can assert on what gets reported.
 vi.mock('../config/rollbar', () => ({
-  default: { error: mocks.rollbarError }
+  default: { error: mocks.rollbarError, warning: mocks.rollbarWarning }
 }))
 
 // Imported after the mocks are registered. The handler module constructs its
@@ -65,6 +66,20 @@ const requestedChunks = () => mocks.getParametersInputs.map(input => input.Names
 
 const paths = count =>
   Array.from({ length: count }, (_, index) => `/okta/api-key/${index}`)
+
+/**
+ * The single aggregate report a run sent, whatever level it came in at --
+ * asserting along the way that there was exactly one of them.
+ */
+const aggregateReport = () => {
+  const calls = [
+    ...mocks.rollbarError.mock.calls.map(call => ({ level: 'error', call })),
+    ...mocks.rollbarWarning.mock.calls.map(call => ({ level: 'warning', call }))
+  ]
+  expect(calls).toHaveLength(1)
+  const { level, call: [message, custom] } = calls[0]
+  return { level, message, custom }
+}
 
 let originalEnv
 
@@ -395,13 +410,14 @@ describe('error handling', () => {
     expect(mocks.each).toHaveBeenCalledTimes(1)
   })
 
-  it('does not report a per-token failure to Rollbar or fail the invocation', async () => {
+  // A per-token failure is reported (see "aggregate failure reporting") but it
+  // is still non-fatal: the invocation resolves.
+  it('does not fail the invocation on a per-token failure', async () => {
     process.env.API_KEY_PATHS = '/okta/bad'
     mocks.listUsers.mockRejectedValue(new Error('401 invalid token'))
 
     await expect(handler({}, {})).resolves.toBeUndefined()
 
-    expect(mocks.rollbarError).not.toHaveBeenCalled()
     expect(console.error).toHaveBeenCalled()
   })
 
@@ -445,5 +461,160 @@ describe('error handling', () => {
 
     expect(mocks.ssmSend).toHaveBeenCalledTimes(2)
     expect(mocks.listUsers).toHaveBeenCalledTimes(10)
+  })
+})
+
+// A key that fails its keepalive is a key on its way to expiring -- the one
+// thing this function exists to prevent -- so the run reports the outcome even
+// though it keeps going. One aggregate item per run, tiered by how bad the run
+// was, and fingerprinted so every run lands in the same error group.
+describe('aggregate failure reporting', () => {
+  beforeEach(() => {
+    process.env.OKTA_ORG_URL = 'https://cru.okta.com'
+    process.env.DRY_RUN = 'false'
+  })
+
+  it('reports at error level when every attempted key failed', async () => {
+    process.env.API_KEY_PATHS = '/okta/a,/okta/b'
+    mocks.listUsers.mockRejectedValue(new Error('401 invalid token'))
+
+    await expect(handler({}, {})).resolves.toBeUndefined()
+
+    const { level, custom } = aggregateReport()
+    expect(level).toBe('error')
+    expect(custom.keypalive).toMatchObject({
+      attempted: 2,
+      failed: 2,
+      succeeded: 0
+    })
+  })
+
+  it('reports at warning level when only some attempted keys failed', async () => {
+    process.env.API_KEY_PATHS = '/okta/bad,/okta/good'
+    mocks.listUsers
+      .mockRejectedValueOnce(new Error('401 invalid token'))
+      .mockResolvedValueOnce({ each: mocks.each })
+
+    await handler({}, {})
+
+    const { level, custom } = aggregateReport()
+    expect(level).toBe('warning')
+    expect(mocks.rollbarError).not.toHaveBeenCalled()
+    expect(custom.keypalive).toMatchObject({
+      attempted: 2,
+      failed: 1,
+      succeeded: 1
+    })
+    expect(custom.keypalive.failures).toEqual([
+      { parameter: '/okta/bad', message: '401 invalid token' }
+    ])
+  })
+
+  it('reports nothing when every key is kept alive', async () => {
+    process.env.API_KEY_PATHS = paths(12).join(',')
+
+    await handler({}, {})
+
+    expect(mocks.listUsers).toHaveBeenCalledTimes(12)
+    expect(mocks.rollbarError).not.toHaveBeenCalled()
+    expect(mocks.rollbarWarning).not.toHaveBeenCalled()
+  })
+
+  // Nothing attempted, nothing reported: a dry run makes no Okta call, so it
+  // has no keepalive outcome to report and must stay silent.
+  it('reports nothing for a dry run', async () => {
+    process.env.DRY_RUN = 'true'
+    process.env.API_KEY_PATHS = '/okta/a,/okta/b'
+
+    await handler({}, {})
+
+    expect(mocks.rollbarError).not.toHaveBeenCalled()
+    expect(mocks.rollbarWarning).not.toHaveBeenCalled()
+  })
+
+  // GetParameters omits paths that do not exist, so a run can legitimately
+  // attempt nothing at all. Zero of zero is not a total failure.
+  it('reports nothing when SSM returns no parameters', async () => {
+    process.env.API_KEY_PATHS = '/okta/missing'
+    mocks.ssmSend.mockResolvedValue({ Parameters: [] })
+
+    await handler({}, {})
+
+    expect(mocks.listUsers).not.toHaveBeenCalled()
+    expect(mocks.rollbarError).not.toHaveBeenCalled()
+    expect(mocks.rollbarWarning).not.toHaveBeenCalled()
+  })
+
+  it('sends one aggregate item for the run, never one per key', async () => {
+    process.env.API_KEY_PATHS = paths(23).join(',')
+    mocks.listUsers.mockRejectedValue(new Error('401 invalid token'))
+
+    await handler({}, {})
+
+    expect(mocks.listUsers).toHaveBeenCalledTimes(23)
+    const { level, custom } = aggregateReport()
+    expect(level).toBe('error')
+    expect(custom.keypalive.failed).toBe(23)
+  })
+
+  // A frameless item is grouped by its message, so counts in the message text
+  // would open a new error group -- and fire a new alert -- on every run with a
+  // different tally. They belong in the custom data.
+  it('keeps the counts out of the message and in the custom data', async () => {
+    process.env.API_KEY_PATHS = '/okta/bad,/okta/a,/okta/b'
+    mocks.listUsers
+      .mockRejectedValueOnce(new Error('401 invalid token'))
+      .mockResolvedValue({ each: mocks.each })
+
+    await handler({}, {})
+
+    const { message, custom } = aggregateReport()
+    expect(message).not.toMatch(/\d/)
+    expect(custom.keypalive).toMatchObject({
+      attempted: 3,
+      failed: 1,
+      succeeded: 2
+    })
+  })
+
+  it('fingerprints the report the same however many keys failed', async () => {
+    process.env.API_KEY_PATHS = '/okta/bad,/okta/good'
+    mocks.listUsers
+      .mockRejectedValueOnce(new Error('401 invalid token'))
+      .mockResolvedValueOnce({ each: mocks.each })
+
+    await handler({}, {})
+    const partial = aggregateReport()
+
+    mocks.rollbarError.mockClear()
+    mocks.rollbarWarning.mockClear()
+    mocks.listUsers.mockReset()
+    mocks.listUsers.mockRejectedValue(new Error('500 upstream failure'))
+    process.env.API_KEY_PATHS = paths(3).join(',')
+
+    await handler({}, {})
+    const total = aggregateReport()
+
+    // Different tiers, different counts, different underlying errors -- same
+    // group.
+    expect(partial.level).toBe('warning')
+    expect(total.level).toBe('error')
+    expect(typeof partial.custom.fingerprint).toBe('string')
+    expect(total.custom.fingerprint).toBe(partial.custom.fingerprint)
+    expect(total.message).toBe(partial.message)
+    expect(total.custom.keypalive.failed).not.toBe(partial.custom.keypalive.failed)
+  })
+
+  it('keeps every remaining key alive when one of them fails', async () => {
+    process.env.API_KEY_PATHS = '/okta/bad,/okta/a,/okta/b,/okta/c'
+    mocks.listUsers
+      .mockRejectedValueOnce(new Error('401 invalid token'))
+      .mockResolvedValue({ each: mocks.each })
+
+    await expect(handler({}, {})).resolves.toBeUndefined()
+
+    expect(mocks.listUsers).toHaveBeenCalledTimes(4)
+    expect(mocks.each).toHaveBeenCalledTimes(3)
+    expect(aggregateReport().custom.keypalive.succeeded).toBe(3)
   })
 })
