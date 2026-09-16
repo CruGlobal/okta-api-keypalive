@@ -44,11 +44,60 @@ const rollbar = configured
   })
   : null
 
-/** Report at `level`, or do nothing at all when reporting is not configured. */
-const report = level => (...args) =>
-  rollbar
-    ? new Promise(resolve => rollbar[level](...args, resolve))
-    : Promise.resolve()
+// The notifier's transport has no working timeout of its own: it never listens
+// for the socket's `timeout` event and never destroys a stalled request, so
+// neither a per-item callback nor `wait()` is guaranteed to ever fire. A POST
+// that stalled once held this function open until the Lambda timeout killed it,
+// with the report never arriving -- so the flush is bounded here instead.
+// Losing a report is bad; losing the keepalive run is worse.
+const FLUSH_TIMEOUT_MS = 5000
+
+/**
+ * Report at `level` and wait for the notifier's queue to drain, for at most
+ * FLUSH_TIMEOUT_MS.
+ *
+ * `wait()` rather than a per-item callback, for two reasons. `Notifier.log`
+ * enqueues the item synchronously before any transform runs, so a `wait()`
+ * issued straight after the call always sees it -- there is no race. And the
+ * drain also covers the items `captureUncaught` / `captureUnhandledRejections`
+ * queue with no callback of their own, which would otherwise be stranded when
+ * the execution environment freezes after the handler returns. When reporting
+ * is disabled the notifier short-circuits before enqueuing anything, so the
+ * queue is already empty and this resolves immediately.
+ *
+ * Always resolves, never rejects and never hangs: the handler awaits this, so a
+ * reporting problem must not become a failed invocation.
+ */
+const report = level => (...args) => {
+  if (!rollbar) return Promise.resolve()
+
+  try {
+    rollbar[level](...args)
+  } catch (error) {
+    console.error(`Error reporting could not enqueue a ${level}: ${error.message}`)
+    return Promise.resolve()
+  }
+
+  return new Promise(resolve => {
+    // Giving up leaves the stalled request in the notifier's queue, which has
+    // two consequences worth knowing. Its 500ms drain poll keeps running (only
+    // a drained queue clears it) -- one stray interval, replaced by the next
+    // report rather than accumulating, holding nothing open. And a later report
+    // from the same execution environment will hit this bound too, because the
+    // queue it waits on can no longer empty: the item still gets sent, we just
+    // stop waiting for confirmation. Hence the wording below -- "not confirmed"
+    // is the honest description, not "not sent".
+    const timer = setTimeout(() => {
+      console.warn(`Error reporting did not confirm within ${FLUSH_TIMEOUT_MS}ms; continuing rather than holding the invocation open (the report may not have been delivered).`)
+      resolve()
+    }, FLUSH_TIMEOUT_MS)
+
+    rollbar.wait(() => {
+      clearTimeout(timer)
+      resolve()
+    })
+  })
+}
 
 export default {
   error: report('error'),

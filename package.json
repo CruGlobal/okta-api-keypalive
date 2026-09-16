@@ -27,7 +27,7 @@
     "@aws-sdk/client-ssm": "^3.1127.0",
     "@okta/okta-sdk-nodejs": "^7.3.0",
     "encoding": "^0.1.13",
-    "rollbar": "^2.26.5"
+    "rollbar": "^3.1.0"
   },
   "standard": {
     "env": [

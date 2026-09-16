@@ -104,6 +104,10 @@ What it pins, and why you should not weaken it:
   endpoint would post to the notifier's own default host, where the rejection is
   silent. A dependency bump carrying a security advisory auto-merges here without
   a human, so this is pinned by a test rather than by a comment.
+- **Reporting never hangs the invocation.** The flush is bounded, and the bound
+  is pinned with a receiver that accepts the report and never answers — the
+  shape of the failure that made it necessary. The report helpers also resolve
+  rather than reject, so no reporting problem can fail a run.
 - **A run that fails keys reports one aggregate item, not one per key**, tiered by
   outcome: every attempted key failing is an `error` (nothing was kept alive),
   some-but-not-all is a `warning`, and a run that attempted nothing — a dry run,
@@ -179,6 +183,16 @@ rejected silently. Both values are owned by `cru-terraform` per environment (so
 the "don't invent infrastructure" rule genuinely applies — changing them is a
 TerraBloks / `cru-terraform` change, not an app change), and reporting stays off
 until both are supplied, whichever of the app and the infrastructure lands first.
+
+**A report can never outlast the run.** The notifier's transport has no working
+timeout — it never listens for the socket's `timeout` event and never destroys a
+stalled request — so neither a per-item callback nor `wait()` is guaranteed to
+fire. A POST that stalled once held this function open until the Lambda timeout
+killed it, with nothing reported. The flush is therefore bounded in
+`config/rollbar.js` (`FLUSH_TIMEOUT_MS`): past that, the run carries on without
+its confirmation. Losing a report is bad; losing the keepalive run is worse. Do
+not remove the bound, and do not replace it with an SDK option — there isn't
+one that aborts.
 
 **`.env` in this repo is a tracked, empty template** (`.gitignore` deliberately
 un-ignores it with `!.env` while ignoring `.env.*`). Keep the values blank —
