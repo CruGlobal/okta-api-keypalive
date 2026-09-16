@@ -16,7 +16,7 @@
     "lint": "standard --verbose",
     "test": "vitest run",
     "test:watch": "vitest",
-    "build": "esbuild handlers/keypalive.js --bundle --platform=node --target=node24 --outfile=dist/keypalive.js --sourcemap --format=cjs"
+    "build": "esbuild handlers/keypalive.js --bundle --platform=node --target=node24 --outfile=dist/keypalive.js --sourcemap --sources-content=false --format=cjs"
   },
   "devDependencies": {
     "esbuild": "0.28.2",

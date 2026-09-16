@@ -15,13 +15,23 @@ The function is packaged as a **container image** (not a zip): the final stage i
 environment variables at runtime) and the **DataDog lambda-extension**. Leave
 that wiring in place when you edit the `Dockerfile`.
 
-The bundle ships with its source map (`npm run build` passes `--sourcemap`, and
-the `Dockerfile` copies all of `dist/`) and the image sets
-`NODE_OPTIONS=--enable-source-maps`, so Node resolves stacks in-process and a
-reported frame names `handlers/keypalive.js` and a real line number instead of a
-bundle offset. Nothing is uploaded anywhere for that to work — keep the flag, the
-`--sourcemap`, and the whole-`dist/` copy together, or reported stacks go back to
-being unreadable.
+The bundle ships with its source map (`npm run build` passes `--sourcemap
+--sources-content=false`, and the `Dockerfile` copies all of `dist/`) and the
+image sets `NODE_OPTIONS=--enable-source-maps`, so Node resolves stacks
+in-process and a reported frame names `handlers/keypalive.js` and a real line
+number instead of a bundle offset. Nothing is uploaded anywhere for that to work
+— keep the flags and the whole-`dist/` copy together, or reported stacks go back
+to being unreadable. `--sources-content=false` drops the embedded copies of all
+2808 bundled sources, which nothing can read anyway (no one uploads this map),
+and takes it from 19.8MB to 5.8MB.
+
+**Formatting the first mapped stack is not free**, and it is worth knowing about
+because it lands on the failure path, before anything is reported. Measured in
+the real base image at a comparable CPU share, loading the bundle and
+materialising one source-mapped stack each cost seconds, not milliseconds — a
+consequence of an 11MB bundle and a 5.8MB mappings table on a small function.
+The cost is paid once per execution environment, by whoever touches
+`error.stack` first.
 
 > The pipeline-v2 design doc spells the project `okta-api-keepalive` in one
 > place. The real project and ECR repo name is **`okta-api-keypalive`** — the
@@ -193,6 +203,22 @@ killed it, with nothing reported. The flush is therefore bounded in
 its confirmation. Losing a report is bad; losing the keepalive run is worse. Do
 not remove the bound, and do not replace it with an SDK option — there isn't
 one that aborts.
+
+The budget covers the **whole** attempt, and the deadline is taken before the
+notifier is handed anything, so a report that spends its budget building the item
+does not then get a fresh timeout to wait in. Every report logs what it cost:
+
+```
+Error reporting error: enqueue 2ms, flush 118ms of 7998ms budget
+```
+
+Read it as: a large `enqueue` is synchronous work inside the notifier; `flush`
+close to the budget means the transport stalled and we gave up on time; `flush`
+far **beyond** the budget means our own timer fired late, so the event loop was
+blocked or the sandbox was starved of CPU — and the delay is not in this code.
+That last case is the one an in-process bound cannot fix: a timer that is never
+scheduled cannot fire on time. It is a function-size question (memory buys CPU
+share), which is Terraform's, not this repo's.
 
 **`.env` in this repo is a tracked, empty template** (`.gitignore` deliberately
 un-ignores it with `!.env` while ignoring `.env.*`). Keep the values blank —

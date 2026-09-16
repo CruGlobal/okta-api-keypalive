@@ -38,6 +38,9 @@ const removeNotifierHandlers = () => {
 // default endpoint, the receiver would see nothing at all.
 const ENDPOINT_PATH = '/ingest-probe/api/1/item/'
 
+// Must match FLUSH_TIMEOUT_MS in rollbar.js.
+const FLUSH_TIMEOUT_MS = 8000
+
 let originalEnv
 let server
 let endpoint
@@ -77,6 +80,7 @@ beforeEach(async () => {
   endpoint = `http://127.0.0.1:${server.address().port}${ENDPOINT_PATH}`
 
   removeNotifierHandlers()
+  vi.spyOn(console, 'log').mockImplementation(() => {})
   vi.spyOn(console, 'warn').mockImplementation(() => {})
 })
 
@@ -208,7 +212,7 @@ describe('with both variables set', () => {
       flushing.then(() => { settled = true })
 
       // It really waits for the flush rather than resolving straight away...
-      await vi.advanceTimersByTimeAsync(4000)
+      await vi.advanceTimersByTimeAsync(FLUSH_TIMEOUT_MS - 1000)
       expect(settled).toBe(false)
 
       // ...and it gives up rather than waiting forever.
@@ -220,6 +224,19 @@ describe('with both variables set', () => {
 
     const warned = console.warn.mock.calls.map(([line]) => line)
     expect(warned.some(line => line.includes('did not confirm'))).toBe(true)
+  })
+
+  // The cost of a reporting attempt is not visible anywhere else, and it has
+  // already burned one invocation, so the phase line is part of the contract.
+  it('logs what the attempt cost, split into enqueue and flush', async () => {
+    process.env.ROLLBAR_ENDPOINT = endpoint
+
+    const reporter = await loadReporter()
+    await reporter.error('probe failure', new Error('probe failure'))
+
+    const logged = console.log.mock.calls.map(([line]) => line)
+    const phases = logged.find(line => line.startsWith('Error reporting error:'))
+    expect(phases).toMatch(/enqueue \d+ms, flush \d+ms of \d+ms budget/)
   })
 
   // The ENVIRONMENT gate is unchanged and independent: both variables present
