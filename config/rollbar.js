@@ -50,7 +50,22 @@ const rollbar = configured
 // that stalled once held this function open until the Lambda timeout killed it,
 // with the report never arriving -- so the flush is bounded here instead.
 // Losing a report is bad; losing the keepalive run is worse.
-const FLUSH_TIMEOUT_MS = 5000
+//
+// The budget covers the WHOLE attempt, enqueue included, and the deadline is
+// taken before the notifier is handed anything: a report that spends its budget
+// building the item does not then get a fresh timeout to wait in. The one thing
+// this cannot bound is the sandbox running out of CPU -- a timer that is never
+// scheduled cannot fire on time -- which is what the log line below exists to
+// tell apart.
+//
+// 8s, from measurement rather than taste: in this app's base image, held to a
+// CPU share comparable to the deployed function, a report that was delivered
+// took 3.2s of which almost all was the first HTTPS connection (building the
+// TLS context and handshaking, once per execution environment). A 5s budget
+// left so little margin that it would have started dropping reports that were
+// about to succeed. 8s still leaves a stalled attempt far inside the function
+// timeout, with the whole run finishing normally afterwards.
+const FLUSH_TIMEOUT_MS = 8000
 
 /**
  * Report at `level` and wait for the notifier's queue to drain, for at most
@@ -68,17 +83,40 @@ const FLUSH_TIMEOUT_MS = 5000
  * Always resolves, never rejects and never hangs: the handler awaits this, so a
  * reporting problem must not become a failed invocation.
  */
-const report = level => (...args) => {
-  if (!rollbar) return Promise.resolve()
+const report = level => async (...args) => {
+  if (!rollbar) return
+
+  const startedAt = Date.now()
+  const deadline = startedAt + FLUSH_TIMEOUT_MS
 
   try {
     rollbar[level](...args)
   } catch (error) {
     console.error(`Error reporting could not enqueue a ${level}: ${error.message}`)
-    return Promise.resolve()
+    return
   }
 
-  return new Promise(resolve => {
+  const enqueuedAt = Date.now()
+  const budget = Math.max(deadline - enqueuedAt, 0)
+
+  if (budget > 0) await flush(budget)
+
+  // One line per report, permanently, because this cost is not otherwise
+  // visible and it has already burned one invocation. Read it like this:
+  //
+  //   enqueue large             -> synchronous work inside the notifier
+  //                                (building the item, parsing the stack,
+  //                                reading the frames' files)
+  //   flush ~= budget           -> the transport stalled; we gave up on time
+  //   flush >> budget           -> our own timer fired late, so the event loop
+  //                                was blocked or the sandbox was starved of
+  //                                CPU, and the delay is not in this code
+  console.log(`Error reporting ${level}: enqueue ${enqueuedAt - startedAt}ms, flush ${Date.now() - enqueuedAt}ms of ${budget}ms budget`)
+}
+
+/** Wait for the notifier's queue to drain, for at most `budget` ms. */
+const flush = budget =>
+  new Promise(resolve => {
     // Giving up leaves the stalled request in the notifier's queue, which has
     // two consequences worth knowing. Its 500ms drain poll keeps running (only
     // a drained queue clears it) -- one stray interval, replaced by the next
@@ -88,16 +126,15 @@ const report = level => (...args) => {
     // stop waiting for confirmation. Hence the wording below -- "not confirmed"
     // is the honest description, not "not sent".
     const timer = setTimeout(() => {
-      console.warn(`Error reporting did not confirm within ${FLUSH_TIMEOUT_MS}ms; continuing rather than holding the invocation open (the report may not have been delivered).`)
+      console.warn(`Error reporting did not confirm within ${budget}ms; continuing rather than holding the invocation open (the report may not have been delivered).`)
       resolve()
-    }, FLUSH_TIMEOUT_MS)
+    }, budget)
 
     rollbar.wait(() => {
       clearTimeout(timer)
       resolve()
     })
   })
-}
 
 export default {
   error: report('error'),
