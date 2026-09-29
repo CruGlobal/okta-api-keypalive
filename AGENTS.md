@@ -230,8 +230,8 @@ This repo is on **pipeline v2: build once, then promote the artifact**. One
 environment-agnostic image is built from `main`, deployed to
 **release-candidate** (the stage surface), and — if it is good — promoted
 byte-for-byte (by digest) to **production**. The authoritative reference is
-[`docs/pipeline-v2.md`](https://github.com/CruGlobal/.github/blob/pipeline-v2/docs/pipeline-v2.md)
-in `CruGlobal/.github`.
+[`docs/pipeline-v2.md`](https://github.com/CruGlobal/.github/blob/main/docs/pipeline-v2.md)
+in `CruGlobal/.github`, which points on to the full document.
 
 There is **no `staging` branch, no `On Staging` label, and no merge-bot** in this
 flow, and the old `lab-dev1` branch mapping is gone too. If you find those
@@ -313,10 +313,9 @@ referenced anywhere, the reference is stale.
 Watch a run with `gh run watch`, or the Actions tab here (build) and in
 `cru-deploy` (deploy/promote/rollback).
 
-> Pilot note: `pipeline-v2.yml` pins the reusable workflow and actions to the
-> `@pipeline-v2` branch of `CruGlobal/.github` and passes
-> `workflow-ref: pipeline-v2` so both match. Those references get re-pinned to
-> `@v2` when the pipeline is released — change them together or not at all.
+> `pipeline-v2.yml` pins the reusable workflow and actions to the released
+> `@v2` tag of `CruGlobal/.github` and passes `workflow-ref: v2` so both match.
+> `v2` tracks the latest v2.x release. Change them together or not at all.
 
 ## Feature flags
 
