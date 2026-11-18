@@ -49,7 +49,6 @@ The cost is paid once per execution environment, by whoever touches
 ├── .github/workflows/conventional-commits.yml # PR gate: PR-title check
 ├── .github/workflows/dependabot-auto-merge.yml
 ├── .github/workflows/pipeline-v2.yml          # nightly build + release-candidate deploy
-├── .github/workflows/build-deploy-lambda.yml  # parked v1 workflow
 ├── handlers/keypalive.js       # the handler (the whole app)
 ├── handlers/keypalive.test.js  # the handler suite (vitest, everything mocked)
 ├── config/rollbar.js           # error reporting (needs ENVIRONMENT + both ROLLBAR_* vars)
@@ -309,11 +308,6 @@ referenced anywhere, the reference is stale.
    `scratch` placeholder, which is how a brand-new function gets its first real
    image), and waits for each update to finish before returning. Production may
    run several functions — one per tenant — and they all move to the same digest.
-9. **The v1 workflow is parked, not removed.**
-   `.github/workflows/build-deploy-lambda.yml` still exists but its push
-   triggers are gone — it is `workflow_dispatch`-only, an escape hatch back to
-   the v1 build+deploy path. Don't use it for normal work, and don't add push
-   triggers to it.
 
 Watch a run with `gh run watch`, or the Actions tab here (build) and in
 `cru-deploy` (deploy/promote/rollback).
